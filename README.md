@@ -1,5 +1,5 @@
 Import Dry Run — pre-go-live audit for CRM opportunity migrations into Reevo; flags what imports clean but silently corrupts reporting.
-Run: `git clone <this repo> && cd reevo-demo && make demo`
+Run: `git clone <this repo> && cd reevo-demo && make demo` · Live: https://dbhag.github.io/reevo-demo/
 Python 3.12 (3.10+ enforced by the Makefile).
 Dashboard lands at `dashboard.html` — open directly in a browser, no server.
 Data is synthetic and seeded — see "Data" below before reading any number as real.
