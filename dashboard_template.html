@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Import Dry Run</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131722; --panel2: #1a1f2e; --border: #2a3040;
+    --text: #e6e9ef; --muted: #8b93a7; --accent: #5b8def; --green: #35c266;
+    --amber: #e8a33d; --red: #e2504a; --mono: 'SF Mono', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .banner { background: var(--amber); color: #241a00; text-align: center; font-weight: 700; padding: 8px 12px; font-size: 13px; letter-spacing: 0.02em; position: sticky; top: 0; z-index: 100; }
+  header { padding: 20px 28px 0; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border); }
+  nav button { background: none; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); }
+  main { padding: 24px 28px 60px; max-width: 1100px; margin: 0 auto; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .bignum { font-size: 56px; font-weight: 700; font-family: var(--mono); }
+  .status-ready { color: var(--green); font-weight: 700; font-size: 18px; letter-spacing: 0.03em; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 18px 0; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; cursor: pointer; transition: transform .1s, border-color .1s; }
+  .tile:hover { transform: translateY(-2px); }
+  .tile.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .tile .n { font-size: 34px; font-weight: 700; font-family: var(--mono); }
+  .tile .label { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .tile.clean .n { color: var(--green); }
+  .tile.silent_corrupt .n { color: var(--amber); }
+  .tile.blocked .n { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: var(--panel2); }
+  tr.canonical { background: rgba(91,141,239,0.12); }
+  tr.canonical td:first-child { border-left: 3px solid var(--accent); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge.flagged { background: rgba(232,163,61,0.18); color: var(--amber); }
+  .badge.blocked { background: rgba(226,80,74,0.18); color: var(--red); }
+  .badge.silent { background: rgba(232,163,61,0.18); color: var(--amber); }
+  .badge.loud { background: rgba(226,80,74,0.18); color: var(--red); }
+  .drill { display: none; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-top: 8px; font-size: 13px; }
+  .drill.open { display: block; }
+  .drill .row-line { margin: 4px 0; }
+  .drill .lbl { color: var(--muted); display: inline-block; min-width: 110px; }
+  .cand { font-family: var(--mono); }
+  .cand.best { color: var(--accent); font-weight: 700; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 12px; }
+  .wrong-card p { margin: 6px 0; line-height: 1.5; font-size: 14px; }
+  .wrong-card .stat { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .caveat { color: var(--muted); font-size: 12px; font-style: italic; margin: 8px 0 16px; }
+  .pill { display: inline-block; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; font-family: var(--mono); font-size: 12px; margin-right: 6px; }
+  .jump { background: var(--accent); border: none; color: #fff; padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+  .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .pair-box { border-radius: 8px; padding: 14px; border: 1px solid var(--border); }
+  .pair-box.good { background: rgba(53,194,102,0.08); border-color: rgba(53,194,102,0.35); }
+  .pair-box.bad { background: rgba(226,80,74,0.08); border-color: rgba(226,80,74,0.35); }
+  .pair-box .pairname { font-weight: 700; margin-bottom: 6px; }
+  .pair-box .nums { font-family: var(--mono); font-size: 15px; margin-bottom: 6px; }
+  .pair-box .verdict { font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.03em; }
+  .pair-box.good .verdict { color: var(--green); }
+  .pair-box.bad .verdict { color: var(--red); }
+  table.sens { margin-top: 10px; }
+  table.sens td, table.sens th { padding: 6px 10px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+</style>
+</head>
+<body>
+
+<div class="banner" id="banner"></div>
+
+<header>
+  <h1>Import Dry Run</h1>
+  <div class="sub" id="source-line"></div>
+</header>
+
+<nav>
+  <button data-screen="naive" class="active">1. Naive Importer View</button>
+  <button data-screen="dryrun">2. Dry Run</button>
+  <button data-screen="decisions">Decision List</button>
+  <button data-screen="wrong">Where This Is Wrong</button>
+</nav>
+
+<main>
+
+  <section class="screen active" id="screen-naive">
+    <div class="card" style="text-align:center; padding:48px 20px;">
+      <div class="bignum" id="naive-total">—</div>
+      <div style="color:var(--muted); margin:6px 0 18px;">records</div>
+      <div class="status-ready" id="naive-status">0 ERRORS — READY TO IMPORT</div>
+      <div class="sub" style="margin-top:18px;">This is what a bulk importer reports today. It's not wrong about errors — it's silent about everything that isn't one.</div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-dryrun">
+    <h2>Three buckets, same file</h2>
+    <div class="tiles">
+      <div class="tile clean" data-bucket="clean">
+        <div class="n" id="n-clean">—</div>
+        <div class="label">Will import clean</div>
+      </div>
+      <div class="tile silent_corrupt focus" data-bucket="silent_corrupt">
+        <div class="n" id="n-silent">—</div>
+        <div class="label">Will import AND silently corrupt reporting</div>
+      </div>
+      <div class="tile blocked" data-bucket="blocked">
+        <div class="n" id="n-blocked">—</div>
+        <div class="label">Blocked / would throw an error</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 id="bucket-title">Will import and silently corrupt reporting</h2>
+      <table>
+        <thead><tr><th>Opportunity</th><th>Legacy stage</th><th>Why</th></tr></thead>
+        <tbody id="bucket-rows"></tbody>
+      </table>
+    </div>
+    <div class="card" id="pipeline-value-card"></div>
+  </section>
+
+  <section class="screen" id="screen-decisions">
+    <h2>Grouped by decision — one legacy stage string, not one row per opportunity</h2>
+    <button class="jump" id="jump-verbal">Jump to canonical example — "Verbal Commit"</button>
+    <table style="margin-top:14px;">
+      <thead><tr><th>Legacy stage</th><th>Count</th><th>Verdict</th><th>Best candidate</th><th>Confidence vs threshold</th></tr></thead>
+      <tbody id="decision-rows"></tbody>
+    </table>
+  </section>
+
+  <section class="screen" id="screen-wrong">
+    <h2>F3 fuzzy dedupe</h2>
+    <div class="card wrong-card" id="wrong-f3"></div>
+
+    <h2>Stage resolution</h2>
+    <div class="card wrong-card" id="wrong-stage"></div>
+
+    <h2>Class A3 — same name, different meaning</h2>
+    <div class="card wrong-card" id="wrong-a3"></div>
+
+    <h2>Deterministic checks</h2>
+    <div class="card wrong-card" id="wrong-det"></div>
+  </section>
+
+</main>
+
+<footer>Import Dry Run — read-only view over report.py output. No analysis happens in this page.</footer>
+
+<script id="report-data" type="application/json">__DATA_JSON__</script>
+<script>
+const DATA = JSON.parse(document.getElementById('report-data').textContent);
+
+document.getElementById('banner').textContent = DATA.meta.data_source_label;
+document.getElementById('source-line').textContent = 'Source: ' + DATA.meta.source + ' — ' + DATA.meta.total_records + ' records';
+
+// --- nav ---
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => showScreen(btn.dataset.screen));
+});
+function showScreen(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+}
+
+// --- screen 1 ---
+document.getElementById('naive-total').textContent = DATA.naive_view.total_records.toLocaleString();
+document.getElementById('naive-status').textContent =
+  DATA.naive_view.errors + ' ERRORS — ' + DATA.naive_view.status.toUpperCase();
+
+// --- screen 2 ---
+document.getElementById('n-clean').textContent = DATA.buckets.clean.count.toLocaleString();
+document.getElementById('n-silent').textContent = DATA.buckets.silent_corrupt.count.toLocaleString();
+document.getElementById('n-blocked').textContent = DATA.buckets.blocked.count.toLocaleString();
+
+const bucketLabels = {
+  clean: 'Will import clean',
+  silent_corrupt: 'Will import and silently corrupt reporting',
+  blocked: 'Blocked / would throw an error',
+};
+
+function renderBucket(name) {
+  document.querySelectorAll('.tile').forEach(t => t.classList.toggle('focus', t.dataset.bucket === name));
+  document.getElementById('bucket-title').textContent = bucketLabels[name];
+  const tbody = document.getElementById('bucket-rows');
+  tbody.innerHTML = '';
+  const examples = DATA.buckets[name].examples.slice(0, 25);
+  for (const ex of examples) {
+    const tr = document.createElement('tr');
+    const why = ex.findings.length
+      ? ex.findings.map(f => f.message).join(' / ')
+      : (ex.stage_verdict !== 'mapped' ? 'Stage not confidently resolved (' + ex.stage_verdict + ')' : '—');
+    tr.innerHTML = '<td>' + ex.name + '</td><td>' + ex.stage_raw + '</td><td>' + why + '</td>';
+    tbody.appendChild(tr);
+  }
+  if (DATA.buckets[name].count > examples.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="3" style="color:var(--muted)">…and ' + (DATA.buckets[name].count - examples.length) + ' more</td>';
+    tbody.appendChild(tr);
+  }
+}
+document.querySelectorAll('.tile').forEach(t => t.addEventListener('click', () => renderBucket(t.dataset.bucket)));
+renderBucket('silent_corrupt');
+
+const pv = DATA.pipeline_value;
+document.getElementById('pipeline-value-card').innerHTML = `
+  <h2>Pipeline value impact — illustrative, not a forecast</h2>
+  <div class="caveat">Dollar figures come from this build's synthetic, seeded dataset. The corruption rate was chosen by the generator, not observed in real data. Do not read these as a real forecast.</div>
+  <p><span class="lbl">Open pipeline, face value:</span> <span class="cand">$${Math.round(pv.open_total).toLocaleString()}</span></p>
+  <p><span class="lbl">Withheld pending decisions:</span> <span class="cand">$${Math.round(pv.withheld_amount).toLocaleString()}</span> (${pv.withheld_count} opps) — excluded, not mispriced</p>
+  <p><span class="lbl">Mispriced (fuzzy-tier auto-map):</span> <span class="cand">$${Math.round(pv.mispriced_amount).toLocaleString()}</span> (${pv.mispriced_count} opps)${pv.mispriced_count === 0 ? ' — at threshold 0.90, on this dataset, no record auto-mapped through the fuzzy tier, so there is no wrong-stage dollar exposure to report' : ''}</p>
+  <p><span class="lbl">Weighted, confident stages:</span> <span class="cand">$${Math.round(pv.weighted_total).toLocaleString()}</span> (${pv.weighted_count} opps)</p>
+`.replace(/<span class="lbl">/g, '<span style="color:var(--muted); display:inline-block; min-width:210px;">');
+
+// --- decision list ---
+const decRows = document.getElementById('decision-rows');
+for (const d of DATA.decision_list) {
+  const tr = document.createElement('tr');
+  tr.className = 'row';
+  if (d.legacy_stage === DATA.canonical_example_stage) { tr.className += ' canonical'; tr.id = 'row-verbal-commit'; }
+  const badge = '<span class="badge ' + d.verdict + '">' + d.verdict + '</span>';
+  const confLine = d.confidence !== null
+    ? '<span class="cand best">' + d.confidence.toFixed(2) + '</span> vs <span class="pill">' + d.threshold.toFixed(2) + ' threshold</span>'
+    : '—';
+  tr.innerHTML = '<td>' + d.legacy_stage + '</td><td>' + d.opportunity_count + '</td><td>' + badge + '</td>'
+    + '<td>' + (d.best_candidate || '—') + '</td><td>' + confLine + '</td>';
+  tr.addEventListener('click', () => toggleDrill(tr, d));
+  decRows.appendChild(tr);
+  const drillTr = document.createElement('tr');
+  const drillTd = document.createElement('td');
+  drillTd.colSpan = 5;
+  const drill = document.createElement('div');
+  drill.className = 'drill';
+  const candList = d.candidates.map(c =>
+    '<span class="cand' + (c.stage === d.best_candidate ? ' best' : '') + '">' + c.stage + ' (' + c.score.toFixed(2) + ')</span>'
+  ).join(', ');
+  drill.innerHTML =
+    '<div class="row-line"><span class="lbl">Legacy stage</span> ' + d.legacy_stage + '</div>' +
+    '<div class="row-line"><span class="lbl">Resolved candidate</span> ' + (d.best_candidate || '(none usable)') + '</div>' +
+    '<div class="row-line"><span class="lbl">Confidence</span> ' + (d.confidence !== null ? d.confidence.toFixed(2) : '—') + '</div>' +
+    '<div class="row-line"><span class="lbl">Threshold</span> ' + d.threshold.toFixed(2) + '</div>' +
+    '<div class="row-line"><span class="lbl">Why</span> ' + d.reason + '</div>' +
+    '<div class="row-line"><span class="lbl">All candidates</span> ' + candList + '</div>';
+  drill.querySelectorAll('.lbl').forEach(el => el.style.cssText = 'color:var(--muted); display:inline-block; min-width:150px;');
+  drillTd.appendChild(drill);
+  drillTr.appendChild(drillTd);
+  decRows.appendChild(drillTr);
+  d._drillEl = drill;
+}
+function toggleDrill(tr, d) {
+  const isOpen = d._drillEl.classList.contains('open');
+  document.querySelectorAll('.drill').forEach(el => el.classList.remove('open'));
+  if (!isOpen) d._drillEl.classList.add('open');
+}
+document.getElementById('jump-verbal').addEventListener('click', () => {
+  showScreen('decisions');
+  const row = document.getElementById('row-verbal-commit');
+  if (row) {
+    if (typeof row.scrollIntoView === 'function') {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const d = DATA.decision_list.find(x => x.legacy_stage === DATA.canonical_example_stage);
+    if (d) { document.querySelectorAll('.drill').forEach(el => el.classList.remove('open')); d._drillEl.classList.add('open'); }
+  }
+});
+
+// --- where this is wrong ---
+const f3 = DATA.where_wrong.f3_dedupe;
+document.getElementById('wrong-f3').innerHTML = f3 ? `
+  <p class="stat">${f3.total_flagged_rows} flagged &rarr; ${f3.true_positive_rows} real (${f3.precision_pct}% precision, ${f3.recall_pct}% recall)</p>
+  <p>${f3.summary}</p>
+  <p>${f3.fp_cluster_note}</p>
+` : '<p>Not available — no ground-truth manifest for this run.</p>';
+
+const sr = DATA.where_wrong.stage_resolution;
+const vc = sr.verbal_commit, pl = sr.pilot;
+let sensHtml = '';
+const sens = DATA.where_wrong.threshold_sensitivity;
+if (sens) {
+  sensHtml = `
+    <p style="margin-top:18px;"><strong>Threshold sensitivity</strong> — re-running resolution lower, shipped threshold unchanged at ${sr.threshold.toFixed(2)}:</p>
+    <table class="sens">
+      <thead><tr><th>Threshold</th><th>Auto-mapped (fuzzy)</th><th>Wrong, per manifest</th><th>Mispriced</th></tr></thead>
+      <tbody>
+        ${sens.map(row => `<tr>
+          <td class="cand">${row.threshold.toFixed(2)}</td>
+          <td>${row.auto_mapped_opportunity_count} opps ${row.auto_mapped_stage_strings.length ? '(' + row.auto_mapped_stage_strings.join(', ') + ')' : ''}</td>
+          <td>${row.wrong_opportunity_count} opps ${row.wrong_stage_strings.length ? '(' + row.wrong_stage_strings.join(', ') + ')' : ''}</td>
+          <td class="cand">$${Math.round(row.mispriced_amount).toLocaleString()}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="caveat" style="font-style:normal; margin-top:8px;">${sr.threshold.toFixed(2)} stays the shipped threshold: at 0.85, the only stage that crosses is Verbal Commit itself — the canonical near-miss this tool exists to catch — which would move it from a human decision to a silent wrong answer. Nothing else crosses until well below 0.80.</p>
+  `;
+}
+document.getElementById('wrong-stage').innerHTML = `
+  <p>Both from the same mechanism, same run — the measured cost sits next to the measured benefit:</p>
+  <div class="pair-grid">
+    <div class="pair-box good">
+      <div class="pairname">${vc.pair}</div>
+      <div class="nums">plain ${vc.plain_similarity.toFixed(2)} &rarr; with lexicon ${vc.with_lexicon.toFixed(2)}</div>
+      <div class="verdict">${vc.outcome}</div>
+      <p style="margin:6px 0 0; font-size:13px;">${vc.outcome_note}</p>
+    </div>
+    <div class="pair-box bad">
+      <div class="pairname">${pl.pair}</div>
+      <div class="nums">plain ${pl.plain_similarity.toFixed(2)} &rarr; with lexicon ${pl.with_lexicon.toFixed(2)}</div>
+      <div class="verdict">${pl.outcome}</div>
+      <p style="margin:6px 0 0; font-size:13px;">${pl.outcome_note}</p>
+    </div>
+  </div>
+  <p>${sr.note}</p>
+  ${sensHtml}
+`;
+
+document.getElementById('wrong-a3').innerHTML = `<p>${DATA.where_wrong.class_a3.note}</p>`;
+
+const det = DATA.where_wrong.deterministic_checks;
+document.getElementById('wrong-det').innerHTML = det ? `
+  <p class="stat">${det.false_positives} FP / ${det.false_negatives} FN against the manifest</p>
+  <p>${det.note}</p>
+` : '<p>Not available — no ground-truth manifest for this run.</p>';
+</script>
+
+</body>
+</html>

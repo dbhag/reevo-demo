@@ -1,0 +1,48 @@
+# Target pipeline config — what makes this Reevo-shaped.
+# Paired with the synthetic dataset generator (see DATASET.md / generate_dataset.py).
+
+multi_currency: true
+seat_count: 40
+
+stages:
+  - name: Prospecting
+    probability: 0.10
+    required_fields: [amount, owner]
+  - name: Qualification
+    probability: 0.25
+    required_fields: [amount, owner, account_id]
+  - name: Proposal
+    probability: 0.45
+    required_fields: [amount, owner, account_id]
+  - name: Negotiation
+    probability: 0.60
+    required_fields: [amount, owner, account_id, close_date]
+  - name: Closed Won
+    probability: 1.0
+    required_fields: [amount, owner, account_id, close_date]
+  - name: Closed Lost
+    probability: 0.0
+    required_fields: [amount, owner, account_id, close_date, closed_lost_reason]
+
+# Legacy stage string -> target stage, above-threshold matches. The gap
+# between this table and the fuzzy resolver (day 2) is the whole point:
+# "Verbal Commit" is deliberately NOT in this table.
+#
+# "Qualified" -> "Qualification" is a human-approved mapping already on file
+# for this customer (clean, confidence 1.0) — and also the deliberately
+# undetectable case: two sales orgs used "Qualified" with different entry
+# criteria, so this alias is correct string-wise and wrong business-wise, and
+# nothing in the data can tell the difference. See DATASET.md class A3 and
+# report section 5.
+stage_aliases:
+  "Closed - Won": "Closed Won"
+  "Closed - Lost": "Closed Lost"
+  "Qualified": "Qualification"
+
+picklists:
+  closed_lost_reason:
+    - Budget
+    - Timing
+    - Competitor
+    - No Decision
+    - Other
