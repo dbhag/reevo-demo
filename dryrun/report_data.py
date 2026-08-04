@@ -103,6 +103,71 @@ def _deterministic_calibration(findings: list[Finding], manifest_path: str | Non
     }
 
 
+UNRESOLVED_STAGE_BROKEN_REPORT = "stage-conversion rates and weighted pipeline forecast"
+
+
+def _silent_bucket_reconciliation(
+    opps: list[NormalizedOpportunity],
+    findings: list[Finding],
+    resolutions: dict[str, StageResolution],
+    manifest_path: str | None,
+) -> dict | None:
+    """The dashboard's silent_corrupt bucket count and the manifest's SILENT
+    row count measure different things and are expected to diverge — this
+    computes exactly how and by how much, instead of leaving the gap
+    unexplained. Only possible against ground truth, so gated like the other
+    calibration sections."""
+    if not manifest_path:
+        return None
+
+    manifest_classes: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                manifest_classes[row["OpportunityId"]].append((row["CorruptionClass"], row["Severity"]))
+    except FileNotFoundError:
+        return None
+
+    manifest_silent_ids = {oid for oid, entries in manifest_classes.items() if any(s == "SILENT" for _, s in entries)}
+
+    findings_by_opp: dict[str, list[Finding]] = defaultdict(list)
+    for f in findings:
+        findings_by_opp[f.opportunity_id].append(f)
+
+    dashboard_silent_ids = set()
+    for o in opps:
+        opp_findings = findings_by_opp.get(o.opportunity_id, [])
+        has_loud = any(f.severity == Severity.LOUD for f in opp_findings)
+        has_silent = any(f.severity == Severity.SILENT for f in opp_findings)
+        res = resolutions.get(o.stage_raw)
+        verdict = res.verdict if res else StageVerdict.BLOCKED
+        if _classify_bucket(has_loud, has_silent, verdict) == "silent_corrupt":
+            dashboard_silent_ids.add(o.opportunity_id)
+
+    over = dashboard_silent_ids - manifest_silent_ids
+    under = manifest_silent_ids - dashboard_silent_ids
+
+    over_by_rule: Counter = Counter()
+    for oid in over:
+        for f in findings_by_opp.get(oid, []):
+            over_by_rule[f.rule_id] += 1
+
+    under_by_class: Counter = Counter()
+    for oid in under:
+        for cls, sev in manifest_classes[oid]:
+            if sev == "SILENT":
+                under_by_class[cls] += 1
+
+    return {
+        "dashboard_count": len(dashboard_silent_ids),
+        "manifest_count": len(manifest_silent_ids),
+        "over_count": len(over),
+        "over_by_rule": dict(over_by_rule.most_common()),
+        "under_count": len(under),
+        "under_by_class": dict(under_by_class.most_common()),
+    }
+
+
 def build_dashboard_data(
     opps: list[NormalizedOpportunity],
     findings: list[Finding],
@@ -165,6 +230,39 @@ def build_dashboard_data(
     silent_by_rule = Counter(f.rule_id for f in findings if f.severity == Severity.SILENT)
     loud_by_rule = Counter(f.rule_id for f in findings if f.severity == Severity.LOUD)
 
+    # Per-class summary of the silent bucket, each tagged with the specific
+    # report it corrupts. "unresolved_stage_mapping" isn't a rules.py finding
+    # — it's opportunities whose stage verdict never reached MAPPED, which
+    # have no attached Finding at all (e.g. "Verbal Commit" itself).
+    silent_findings_by_rule: dict[str, list[Finding]] = defaultdict(list)
+    for f in findings:
+        if f.severity == Severity.SILENT:
+            silent_findings_by_rule[f.rule_id].append(f)
+
+    silent_class_summary = []
+    unresolved_stage_count = verdict_counts.get(StageVerdict.FLAGGED, 0) + verdict_counts.get(StageVerdict.BLOCKED, 0)
+    if unresolved_stage_count:
+        silent_class_summary.append({
+            "rule_id": "unresolved_stage_mapping",
+            "count": unresolved_stage_count,
+            "broken_report": UNRESOLVED_STAGE_BROKEN_REPORT,
+            "example_message": "Legacy stage did not resolve to a target stage with enough confidence to auto-map.",
+        })
+    for rule_id, fs in silent_findings_by_rule.items():
+        silent_class_summary.append({
+            "rule_id": rule_id,
+            "count": len(fs),
+            "broken_report": fs[0].broken_report or "unspecified report",
+            "example_message": fs[0].message,
+        })
+    silent_class_summary.sort(key=lambda x: -x["count"])
+
+    bucket_reconciliation = _silent_bucket_reconciliation(opps, findings, resolutions, manifest_path)
+    a3_missed_count = (
+        bucket_reconciliation["under_by_class"].get("a3_hidden_semantic_drift", 0)
+        if bucket_reconciliation else None
+    )
+
     return {
         "meta": {
             "source": source_path,
@@ -187,6 +285,7 @@ def build_dashboard_data(
             "blocked": verdict_counts.get(StageVerdict.BLOCKED, 0),
         },
         "decision_list": decision_list,
+        "silent_class_summary": silent_class_summary,
         "canonical_example_stage": "Verbal Commit",
         "pipeline_value": {
             "open_total": _dec(pb.open_total),
@@ -247,7 +346,14 @@ def build_dashboard_data(
                     "a correct mapping. This tool catches it here only because the generator "
                     "knows the answer. On real data this requires asking a human, not running "
                     "a better algorithm."
+                    + (
+                        f" {a3_missed_count} of the 40 injected instances land in the clean bucket, "
+                        f"not silent_corrupt — there is no signal in this data for the tool to do "
+                        f"otherwise."
+                        if a3_missed_count is not None else ""
+                    )
                 ),
             },
+            "silent_bucket_reconciliation": bucket_reconciliation,
         },
     }

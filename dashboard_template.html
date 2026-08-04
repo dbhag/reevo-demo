@@ -71,6 +71,16 @@
   table.sens { margin-top: 10px; }
   table.sens td, table.sens th { padding: 6px 10px; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+  .no-candidate { color: var(--muted); font-style: italic; }
+  .orientation { padding: 0 28px 16px; max-width: 1100px; margin: 0 auto; color: var(--text); font-size: 14px; line-height: 1.5; }
+  .orientation strong { color: var(--accent); }
+  .bucket-summary { margin: 14px 0; }
+  .bucket-summary-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .bucket-summary-row .cls { font-family: var(--mono); }
+  .bucket-summary-row .rep { color: var(--muted); text-align: right; }
+  .decision-context { color: var(--muted); font-size: 13px; margin: 6px 0 14px; }
+  .naive-caption strong { color: var(--red); }
+  .naive-caption .ok { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -81,6 +91,11 @@
   <h1>Import Dry Run</h1>
   <div class="sub" id="source-line"></div>
 </header>
+
+<div class="orientation">
+  Reevo replaces the customer's CRM outright, so every deployment opens with importing a legacy system's full history into an empty instance.
+  <strong>This is a dry run for that import</strong> — nothing here writes to production.
+</div>
 
 <nav>
   <button data-screen="naive" class="active">1. Naive Importer View</button>
@@ -96,7 +111,7 @@
       <div class="bignum" id="naive-total">—</div>
       <div style="color:var(--muted); margin:6px 0 18px;">records</div>
       <div class="status-ready" id="naive-status">0 ERRORS — READY TO IMPORT</div>
-      <div class="sub" style="margin-top:18px;">This is what a bulk importer reports today. It's not wrong about errors — it's silent about everything that isn't one.</div>
+      <div class="sub naive-caption" id="naive-caption" style="margin-top:18px;"></div>
     </div>
   </section>
 
@@ -118,8 +133,9 @@
     </div>
     <div class="card">
       <h2 id="bucket-title">Will import and silently corrupt reporting</h2>
+      <div class="bucket-summary" id="bucket-summary"></div>
       <table>
-        <thead><tr><th>Opportunity</th><th>Legacy stage</th><th>Why</th></tr></thead>
+        <thead id="bucket-thead"></thead>
         <tbody id="bucket-rows"></tbody>
       </table>
     </div>
@@ -128,6 +144,7 @@
 
   <section class="screen" id="screen-decisions">
     <h2>Grouped by decision — one legacy stage string, not one row per opportunity</h2>
+    <div class="decision-context" id="decision-context"></div>
     <button class="jump" id="jump-verbal">Jump to canonical example — "Verbal Commit"</button>
     <table style="margin-top:14px;">
       <thead><tr><th>Legacy stage</th><th>Count</th><th>Verdict</th><th>Best candidate</th><th>Confidence vs threshold</th></tr></thead>
@@ -174,6 +191,11 @@ function showScreen(name) {
 document.getElementById('naive-total').textContent = DATA.naive_view.total_records.toLocaleString();
 document.getElementById('naive-status').textContent =
   DATA.naive_view.errors + ' ERRORS — ' + DATA.naive_view.status.toUpperCase();
+document.getElementById('naive-caption').innerHTML =
+  'A bulk importer reports zero errors because it hasn\'t tried yet — it counts rows, not outcomes. ' +
+  'Two different failure modes hide behind that number: ' +
+  '<strong>' + DATA.buckets.blocked.count.toLocaleString() + ' will fail on contact</strong>, ' +
+  '<span class="ok">' + DATA.buckets.silent_corrupt.count.toLocaleString() + ' will succeed and be wrong</span>.';
 
 // --- screen 2 ---
 document.getElementById('n-clean').textContent = DATA.buckets.clean.count.toLocaleString();
@@ -186,24 +208,53 @@ const bucketLabels = {
   blocked: 'Blocked / would throw an error',
 };
 
+const unresolvedEntry = (DATA.silent_class_summary || []).find(c => c.rule_id === 'unresolved_stage_mapping');
+const unresolvedBrokenReport = unresolvedEntry ? unresolvedEntry.broken_report : 'stage-conversion rates and weighted pipeline forecast';
+
 function renderBucket(name) {
   document.querySelectorAll('.tile').forEach(t => t.classList.toggle('focus', t.dataset.bucket === name));
   document.getElementById('bucket-title').textContent = bucketLabels[name];
+
+  const showWhy = name !== 'clean';
+  const thead = document.getElementById('bucket-thead');
+  thead.innerHTML = showWhy
+    ? '<tr><th>Opportunity</th><th>Legacy stage</th><th>Why</th></tr>'
+    : '<tr><th>Opportunity</th><th>Legacy stage</th></tr>';
+
   const tbody = document.getElementById('bucket-rows');
   tbody.innerHTML = '';
   const examples = DATA.buckets[name].examples.slice(0, 25);
+  const colspan = showWhy ? 3 : 2;
   for (const ex of examples) {
     const tr = document.createElement('tr');
-    const why = ex.findings.length
-      ? ex.findings.map(f => f.message).join(' / ')
-      : (ex.stage_verdict !== 'mapped' ? 'Stage not confidently resolved (' + ex.stage_verdict + ')' : '—');
-    tr.innerHTML = '<td>' + ex.name + '</td><td>' + ex.stage_raw + '</td><td>' + why + '</td>';
+    let cells = '<td>' + ex.name + '</td><td>' + ex.stage_raw + '</td>';
+    if (showWhy) {
+      const why = ex.findings.length
+        ? ex.findings.map(f => f.message + (f.broken_report ? ' (breaks: ' + f.broken_report + ')' : '')).join(' / ')
+        : (ex.stage_verdict !== 'mapped'
+            ? 'Stage not confidently resolved (' + ex.stage_verdict + ') (breaks: ' + unresolvedBrokenReport + ')'
+            : '—');
+      cells += '<td>' + why + '</td>';
+    }
+    tr.innerHTML = cells;
     tbody.appendChild(tr);
   }
   if (DATA.buckets[name].count > examples.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="3" style="color:var(--muted)">…and ' + (DATA.buckets[name].count - examples.length) + ' more</td>';
+    tr.innerHTML = '<td colspan="' + colspan + '" style="color:var(--muted)">…and ' + (DATA.buckets[name].count - examples.length) + ' more</td>';
     tbody.appendChild(tr);
+  }
+
+  const summaryEl = document.getElementById('bucket-summary');
+  if (name === 'silent_corrupt' && DATA.silent_class_summary && DATA.silent_class_summary.length) {
+    summaryEl.innerHTML =
+      '<div style="color:var(--muted); font-size:12px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.03em;">Why, by class — one row can have more than one reason</div>' +
+      DATA.silent_class_summary.map(c =>
+        '<div class="bucket-summary-row"><span class="cls">' + c.rule_id + ' — ' + c.count + '</span>' +
+        '<span class="rep">breaks: ' + c.broken_report + '</span></div>'
+      ).join('');
+  } else {
+    summaryEl.innerHTML = '';
   }
 }
 document.querySelectorAll('.tile').forEach(t => t.addEventListener('click', () => renderBucket(t.dataset.bucket)));
@@ -220,6 +271,18 @@ document.getElementById('pipeline-value-card').innerHTML = `
 `.replace(/<span class="lbl">/g, '<span style="color:var(--muted); display:inline-block; min-width:210px;">');
 
 // --- decision list ---
+const CANDIDATE_DISPLAY_FLOOR = 0.60;
+const NO_CANDIDATE_TEXT = 'no meaningful candidate — human decision required';
+function candidateLabel(d) {
+  if (d.confidence !== null && d.confidence < CANDIDATE_DISPLAY_FLOOR) {
+    return '<span class="no-candidate">' + NO_CANDIDATE_TEXT + '</span>';
+  }
+  return d.best_candidate || '—';
+}
+
+document.getElementById('decision-context').textContent =
+  DATA.decision_list.length + ' decisions replace manual review of ' + DATA.meta.total_records.toLocaleString() + ' rows.';
+
 const decRows = document.getElementById('decision-rows');
 for (const d of DATA.decision_list) {
   const tr = document.createElement('tr');
@@ -230,7 +293,7 @@ for (const d of DATA.decision_list) {
     ? '<span class="cand best">' + d.confidence.toFixed(2) + '</span> vs <span class="pill">' + d.threshold.toFixed(2) + ' threshold</span>'
     : '—';
   tr.innerHTML = '<td>' + d.legacy_stage + '</td><td>' + d.opportunity_count + '</td><td>' + badge + '</td>'
-    + '<td>' + (d.best_candidate || '—') + '</td><td>' + confLine + '</td>';
+    + '<td>' + candidateLabel(d) + '</td><td>' + confLine + '</td>';
   tr.addEventListener('click', () => toggleDrill(tr, d));
   decRows.appendChild(tr);
   const drillTr = document.createElement('tr');
@@ -243,7 +306,7 @@ for (const d of DATA.decision_list) {
   ).join(', ');
   drill.innerHTML =
     '<div class="row-line"><span class="lbl">Legacy stage</span> ' + d.legacy_stage + '</div>' +
-    '<div class="row-line"><span class="lbl">Resolved candidate</span> ' + (d.best_candidate || '(none usable)') + '</div>' +
+    '<div class="row-line"><span class="lbl">Resolved candidate</span> ' + candidateLabel(d) + '</div>' +
     '<div class="row-line"><span class="lbl">Confidence</span> ' + (d.confidence !== null ? d.confidence.toFixed(2) : '—') + '</div>' +
     '<div class="row-line"><span class="lbl">Threshold</span> ' + d.threshold.toFixed(2) + '</div>' +
     '<div class="row-line"><span class="lbl">Why</span> ' + d.reason + '</div>' +
@@ -273,10 +336,23 @@ document.getElementById('jump-verbal').addEventListener('click', () => {
 
 // --- where this is wrong ---
 const f3 = DATA.where_wrong.f3_dedupe;
+const recon = DATA.where_wrong.silent_bucket_reconciliation;
+const reconHtml = recon ? `
+  <p style="margin-top:14px;"><strong>Silent bucket count vs. manifest:</strong> the dashboard shows
+  ${recon.dashboard_count} in the silent-corrupt bucket; the ground-truth manifest tags
+  ${recon.manifest_count} rows SILENT. The gap is over-flagging, not a stale manifest:
+  +${recon.over_count} rows pulled into the bucket by findings not in the manifest
+  (${Object.entries(recon.over_by_rule).map(([k, v]) => k + ': ' + v).join(', ')}) —
+  almost entirely F3 false positives landing on otherwise-clean rows — offset by
+  -${recon.under_count} rows the manifest tags SILENT that show as clean here
+  (${Object.entries(recon.under_by_class).map(([k, v]) => k + ': ' + v).join(', ')}) —
+  class A3, undetectable by design (see below).</p>
+` : '';
 document.getElementById('wrong-f3').innerHTML = f3 ? `
   <p class="stat">${f3.total_flagged_rows} flagged &rarr; ${f3.true_positive_rows} real (${f3.precision_pct}% precision, ${f3.recall_pct}% recall)</p>
   <p>${f3.summary}</p>
   <p>${f3.fp_cluster_note}</p>
+  ${reconHtml}
 ` : '<p>Not available — no ground-truth manifest for this run.</p>';
 
 const sr = DATA.where_wrong.stage_resolution;
@@ -317,6 +393,7 @@ document.getElementById('wrong-stage').innerHTML = `
     </div>
   </div>
   <p>${sr.note}</p>
+  <p>Display floor: candidates below ${CANDIDATE_DISPLAY_FLOOR.toFixed(2)} confidence show as "${NO_CANDIDATE_TEXT}" instead of a stage name in the decision list and drill-down — cosmetic only, doesn't change resolution, the ${sr.threshold.toFixed(2)} auto-map threshold, or any verdict.</p>
   ${sensHtml}
 `;
 

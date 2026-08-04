@@ -71,7 +71,7 @@ def check_rules(
                     Severity.SILENT,
                     oid,
                     "Closed opportunity with no close date.",
-                    broken_report="Q3 stage-conversion reporting",
+                    broken_report="cycle-time and pipeline velocity reporting",
                 )
             )
 
@@ -211,7 +211,7 @@ def check_rules(
                     Severity.SILENT,
                     oid,
                     "Owner is blank; import will reassign to whoever runs it.",
-                    broken_report="rep leaderboard",
+                    broken_report="rep leaderboard and quota attainment",
                 )
             )
         elif not ID_SHAPE_RE.match(owner):
@@ -221,7 +221,7 @@ def check_rules(
                     Severity.SILENT,
                     oid,
                     f"Owner {owner!r} is a queue/alias, not a rep.",
-                    broken_report="rep leaderboard",
+                    broken_report="rep leaderboard and quota attainment",
                 )
             )
         elif owner not in users:
@@ -231,7 +231,7 @@ def check_rules(
                     Severity.SILENT,
                     oid,
                     f"Owner {owner!r} not found in target user list (rep left before export).",
-                    broken_report="rep leaderboard",
+                    broken_report="rep leaderboard and quota attainment",
                 )
             )
         elif not users[owner].is_active:
@@ -241,7 +241,7 @@ def check_rules(
                     Severity.SILENT,
                     oid,
                     f"Owner {owner!r} is inactive; import will reassign to whoever runs it.",
-                    broken_report="rep leaderboard",
+                    broken_report="rep leaderboard and quota attainment",
                 )
             )
 
@@ -313,7 +313,7 @@ def _duplicate_deal_findings(opps: list[NormalizedOpportunity]) -> list[Finding]
                             this.opportunity_id,
                             f"Possible duplicate of {other.opportunity_id!r} ({other.name!r}): same account, "
                             f"overlapping dates, different amount.",
-                            broken_report="weighted pipeline forecast (double-counted deal)",
+                            broken_report="inflated pipeline totals (double-counted deal)",
                         )
                     )
 
