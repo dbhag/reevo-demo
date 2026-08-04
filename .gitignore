@@ -4,3 +4,7 @@ data/generated/
 report.md
 dashboard.html
 .claude/
+
+# Published dashboard copy — explicit exception, this one gets committed.
+!docs/
+!docs/index.html
